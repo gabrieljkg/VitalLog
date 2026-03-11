@@ -1,0 +1,5 @@
+{
+  "name": "StockSense AI",
+  "description": "AI-powered inventory management with demand prediction, automatic purchase suggestions, and expiry alerts.",
+  "requestFramePermissions": []
+}
