@@ -98,6 +98,7 @@ export default function App() {
   const [mixedCashAmount, setMixedCashAmount] = useState<number>(0);
   const [mixedCardAmount, setMixedCardAmount] = useState<number>(0);
   const [mixedCardMethod, setMixedCardMethod] = useState<'cartao_credito' | 'cartao_debito' | 'pix'>('cartao_credito');
+  const [amountReceived, setAmountReceived] = useState<number>(0);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [closedRegisterSummary, setClosedRegisterSummary] = useState<{
@@ -113,6 +114,8 @@ export default function App() {
     items: { product: Product, quantity: number }[],
     total: number,
     paymentMethod: string,
+    amountReceived?: number,
+    change?: number,
     date: string
   } | null>(null);
   const [newProduct, setNewProduct] = useState({
@@ -666,10 +669,23 @@ export default function App() {
       return;
     }
     
+    if (selectedPaymentMethod === 'dinheiro') {
+      if (amountReceived < cartTotal - 0.01) {
+        setError(`O valor recebido (R$ ${amountReceived.toFixed(2)}) não pode ser menor que o total da venda (R$ ${cartTotal.toFixed(2)}).`);
+        setTimeout(() => setError(null), 5000);
+        return;
+      }
+    }
+
     if (selectedPaymentMethod === 'misto') {
       const totalMixed = mixedCashAmount + mixedCardAmount;
       if (Math.abs(totalMixed - cartTotal) > 0.01) {
         setError(`A soma dos valores (R$ ${totalMixed.toFixed(2)}) deve ser igual ao total da venda (R$ ${cartTotal.toFixed(2)}).`);
+        setTimeout(() => setError(null), 5000);
+        return;
+      }
+      if (amountReceived < mixedCashAmount - 0.01) {
+        setError(`O valor recebido em dinheiro (R$ ${amountReceived.toFixed(2)}) não pode ser menor que a parte em dinheiro da venda (R$ ${mixedCashAmount.toFixed(2)}).`);
         setTimeout(() => setError(null), 5000);
         return;
       }
@@ -784,10 +800,19 @@ export default function App() {
         if (stockError) throw stockError;
       }
 
+      let change = 0;
+      if (selectedPaymentMethod === 'dinheiro') {
+        change = Math.max(0, amountReceived - cartTotal);
+      } else if (selectedPaymentMethod === 'misto') {
+        change = Math.max(0, amountReceived - mixedCashAmount);
+      }
+
       setReceiptData({
         items: [...cart],
         total: cartTotal,
         paymentMethod: selectedPaymentMethod === 'misto' ? `Misto (Dinheiro + ${mixedCardMethod.replace('_', ' ')})` : selectedPaymentMethod,
+        amountReceived: (selectedPaymentMethod === 'dinheiro' || selectedPaymentMethod === 'misto') ? amountReceived : undefined,
+        change: (selectedPaymentMethod === 'dinheiro' || selectedPaymentMethod === 'misto') ? change : undefined,
         date: new Date().toISOString()
       });
       setCart([]);
@@ -1802,8 +1827,10 @@ export default function App() {
                       </button>
                       <button 
                         onClick={() => {
+                          setSelectedPaymentMethod('dinheiro');
                           setMixedCashAmount(0);
                           setMixedCardAmount(cartTotal);
+                          setAmountReceived(cartTotal);
                           setIsPaymentModalOpen(true);
                         }}
                         disabled={isProcessingSale || cart.length === 0}
@@ -2526,6 +2553,8 @@ export default function App() {
                             ],
                             total: 68.50,
                             paymentMethod: 'dinheiro',
+                            amountReceived: 100.00,
+                            change: 31.50,
                             date: new Date().toISOString()
                           });
                           setIsReceiptModalOpen(true);
@@ -2954,7 +2983,10 @@ export default function App() {
                 <label className="block text-sm font-bold text-slate-700 mb-2">Forma de Pagamento</label>
                 
                 <button 
-                  onClick={() => setSelectedPaymentMethod('dinheiro')}
+                  onClick={() => {
+                    setSelectedPaymentMethod('dinheiro');
+                    setAmountReceived(cartTotal);
+                  }}
                   className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${selectedPaymentMethod === 'dinheiro' ? 'border-sky-500 bg-sky-50' : 'border-slate-100 hover:border-slate-200'}`}
                 >
                   <div className="flex items-center gap-3">
@@ -3006,7 +3038,10 @@ export default function App() {
                 </button>
 
                 <button 
-                  onClick={() => setSelectedPaymentMethod('misto')}
+                  onClick={() => {
+                    setSelectedPaymentMethod('misto');
+                    setAmountReceived(mixedCashAmount);
+                  }}
                   className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${selectedPaymentMethod === 'misto' ? 'border-sky-500 bg-sky-50' : 'border-slate-100 hover:border-slate-200'}`}
                 >
                   <div className="flex items-center gap-3">
@@ -3018,6 +3053,31 @@ export default function App() {
                   {selectedPaymentMethod === 'misto' && <CheckCircle2 className="text-sky-600" size={20} />}
                 </button>
               </div>
+
+              {selectedPaymentMethod === 'dinheiro' && (
+                <div className="mb-8 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Valor Recebido</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">R$</span>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        min="0"
+                        value={amountReceived || ''}
+                        onChange={(e) => setAmountReceived(parseFloat(e.target.value) || 0)}
+                        className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
+                    <span className="text-sm font-bold text-slate-500">Troco:</span>
+                    <span className={`font-bold ${amountReceived >= cartTotal ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      R$ {Math.max(0, amountReceived - cartTotal).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {selectedPaymentMethod === 'misto' && (
                 <div className="mb-8 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
@@ -3034,6 +3094,7 @@ export default function App() {
                           const val = Math.max(0, parseFloat(e.target.value) || 0);
                           setMixedCashAmount(val);
                           setMixedCardAmount(Math.max(0, cartTotal - val));
+                          setAmountReceived(val);
                         }}
                         className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 outline-none"
                       />
@@ -3053,6 +3114,7 @@ export default function App() {
                           const val = Math.max(0, parseFloat(e.target.value) || 0);
                           setMixedCardAmount(val);
                           setMixedCashAmount(Math.max(0, cartTotal - val));
+                          setAmountReceived(Math.max(0, cartTotal - val));
                         }}
                         className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 outline-none"
                       />
@@ -3074,6 +3136,31 @@ export default function App() {
                       R$ {(mixedCashAmount + mixedCardAmount).toFixed(2)}
                     </span>
                   </div>
+                  
+                  {mixedCashAmount > 0 && (
+                    <>
+                      <div className="pt-4 border-t border-slate-200">
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Valor Recebido (Dinheiro)</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">R$</span>
+                          <input 
+                            type="number" 
+                            step="0.01"
+                            min="0"
+                            value={amountReceived || ''}
+                            onChange={(e) => setAmountReceived(parseFloat(e.target.value) || 0)}
+                            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div className="pt-2 flex justify-between items-center">
+                        <span className="text-sm font-bold text-slate-500">Troco:</span>
+                        <span className={`font-bold ${amountReceived >= mixedCashAmount ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          R$ {Math.max(0, amountReceived - mixedCashAmount).toFixed(2)}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -3161,6 +3248,18 @@ export default function App() {
                   <span>Forma de Pagamento:</span>
                   <span className="uppercase">{receiptData.paymentMethod.replace('_', ' ')}</span>
                 </div>
+                {receiptData.amountReceived !== undefined && receiptData.change !== undefined && (
+                  <>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span>Valor Recebido:</span>
+                      <span>R$ {receiptData.amountReceived.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs mb-4">
+                      <span>Troco:</span>
+                      <span>R$ {receiptData.change.toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
 
                 <div className="text-center text-xs mt-4 whitespace-pre-line">
                   {storeSettings.message}
